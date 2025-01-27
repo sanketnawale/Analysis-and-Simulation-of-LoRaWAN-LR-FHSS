@@ -174,33 +174,37 @@ F_success = 0;% Successful fragment transmissions
         end
     
     %% Collision analysis
-    target_collided = zeros(1,size(pack_tx_segments,2));           %Collison counter for Desired signal
-    target_discarded = zeros(1,size(pack_tx_segments,2));          %Collison counter for Desired signal for capture effect
+    target_collided = zeros(1,size(pack_tx_segments,2));           %Counts how many times each fragment (header or payload) collided.
+    target_discarded = zeros(1,size(pack_tx_segments,2));          %Tracks fragments that can't be used even with recovery techniques (e.g., capture effect).
 
-    frag_active = zeros(1,length(pack_tx_segments(Transmit,:)));
+    frag_active = zeros(1,length(pack_tx_segments(Transmit,:)));%Tracks which fragments are active (being transmitted) at each moment.
 
     
-    clear seg_simultaneous
+    clear seg_simultaneous %Extracts the transmission segments of all devices transmitting during the vulnerable time.
     seg_trans_simultaneous = pack_tx_segments(simultaneous,:);                % Select all the fragments during the interval 2T
-    seg_trans_simultaneous(:,(Header_N_DR8+1))=[];                            %Twait, that's not a transmission
+    seg_trans_simultaneous(:,(Header_N_DR8+1))=[];                            %Twait, that's not a transmission : %Removes the Transceiver Wait (T_wait) fragment since it doesn’t involve any actual transmissi
     seg_simultaneous = seg_trans_simultaneous;
     %% Following Equation (4), (5), (6) to find A_{H}, A_{F} and A_{L}
-        for seg=1:1:length(pack_tx_segments(Transmit,:))
+        for seg=1:1:length(pack_tx_segments(Transmit,:))%Go through each fragment of the selected device (both headers and payloads).
             
-            if(seg~=Header_N_DR8+1)
+            if(seg~=Header_N_DR8+1) % Ignore the Transceiver Wait (T_wait) fragment because it’s not part of an active transmission.
                 clear active_pattern
                 clear iscollision
 
                 if(seg~=length(pack_tx_segments(Transmit,:)) && seg<=Header_N_DR8)         % collisions during header transmission
                     
-                transmission_sim_header(m,seg) = length(find(seg_simultaneous(:,1:Header_N_DR8)>=(pack_tx_segments(Transmit,seg)-Header_duration) & seg_simultaneous(:,1:Header_N_DR8)<=(pack_tx_segments(Transmit,seg)+Header_duration)));
+                transmission_sim_header(m,seg) = length(find(seg_simultaneous(:,1:Header_N_DR8)>=(pack_tx_segments(Transmit,seg)-Header_duration) & seg_simultaneous(:,1:Header_N_DR8)<=(pack_tx_segments(Transmit,seg)+Header_duration))); 
+                %Checks how many other devices' headers overlap in time with the current header.Finds overlaps where other headers started within the current header's time range.
+                
                 transmission_sim_frag(m,seg) = length(find(seg_simultaneous(:,(Header_N_DR8+1):end-1)>=(pack_tx_segments(Transmit,seg)-F_duration) & seg_simultaneous(:,(Header_N_DR8+1):end-1)<=(pack_tx_segments(Transmit,seg)+Header_duration)));
+                %Checks if any payload fragments from other devices overlap with the current header.
                 transmission_sim_last(m,seg) = length(find(seg_simultaneous(:,end)>=(pack_tx_segments(Transmit,seg)-Last_fragment_duration) & seg_simultaneous(:,end)<=(pack_tx_segments(Transmit,seg)+Header_duration)));
-                
+                %Checks if the last fragment of other devices overlaps with the current header.
                 transmission_sim(m,seg) = transmission_sim_header(m,seg) + transmission_sim_frag(m,seg) + transmission_sim_last(m,seg);
-                
+                %
                 elseif(seg~=length(pack_tx_segments(Transmit,:)) && seg>Header_N_DR8)    % collisions during payload data fragments transmission
-                    
+                 %Similar logic as for headers, but now focused on payload fragments:
+   
                 transmission_sim_header(m,seg) = length(find(seg_simultaneous(:,1:Header_N_DR8)>=(pack_tx_segments(Transmit,seg)-Header_duration) & seg_simultaneous(:,1:Header_N_DR8)<=(pack_tx_segments(Transmit,seg)+F_duration)));
                 transmission_sim_frag(m,seg) = length(find(seg_simultaneous(:,(Header_N_DR8+1):end-1)>=(pack_tx_segments(Transmit,seg)-F_duration) & seg_simultaneous(:,(Header_N_DR8+1):end-1)<=(pack_tx_segments(Transmit,seg)+F_duration)));
                 transmission_sim_last(m,seg) = length(find(seg_simultaneous(:,end)>=(pack_tx_segments(Transmit,seg)-Last_fragment_duration) & seg_simultaneous(:,end)<=(pack_tx_segments(Transmit,seg)+F_duration)));
@@ -215,36 +219,37 @@ F_success = 0;% Successful fragment transmissions
                 transmission_sim(m,seg) = transmission_sim_header(m,seg) + transmission_sim_frag(m,seg) + transmission_sim_last(m,seg);
                                 
                 end   
-                if (~isempty(transmission_sim(m,seg)))
+                if (~isempty(transmission_sim(m,seg))):Tells how many other devices are transmitting at the same time as the current fragment.
+                %If it’s not empty, there are devices interfering.
 
-                frag_active(seg) =  (transmission_sim(m,seg));
+                frag_active(seg) =  (transmission_sim(m,seg));%
                 % Select the channels for the simultenous fragments
                 active_pattern = randi(OBW_channels,(transmission_sim(m,seg)),1)';
                 % How many active devices are assigned to the same channel (collision)
-                iscollision = find(active_pattern==target_pattern(seg));    % if non zero, that's collision
+                iscollision = find(active_pattern==target_pattern(seg));    % if non zero, that's collisionIf any interfering device uses the same channel as the selected device, a collision occurs.
                     
                     if(~isempty(iscollision))
-                      target_collided (seg) = 1;
+                      target_collided (seg) = 1; %Marks the current fragment (seg) as "collided" because there’s interference on the same channe
                             
                       clear Coordinates                    
                       clear rho
                       clear Theta
-                      
+                      %Generate random positions for interfering devices
                       Coordinates=zeros(length(iscollision),2);  
                       
-                      rho = sqrt(rand(length(iscollision),1).*(max(Ground_distance)^2));       
-                      Theta = rand(length(iscollision),1)*2*pi;                      
-                      Coordinates(:,1) = cos(Theta).*rho;
+                      rho = sqrt(rand(length(iscollision),1).*(max(Ground_distance)^2)); %Random distance of the device from the center of the coverage area.       
+                      Theta = rand(length(iscollision),1)*2*pi; %     Random angle to place the device in a circular area                
+                      Coordinates(:,1) = cos(Theta).*rho;% %Stores the (x, y) positions of the interfering devices.
                       Coordinates(:,2) = sin(Theta).*rho;
                       
                 %% Generating location of interfering signals based on uniform distribution of NODES
 
                 % (i)First location -> (ii) elevation angle -> (iii) Rician K factor
-                
-                      Location_Nodes_Int = sqrt(Coordinates(:,1).^2 + Coordinates(:,2).^2)';
-                      dPropogation=zeros(1,length(iscollision));
-                       E_dpro=zeros(1,length(iscollision));
-                       
+                %Calculate distances to the satellite
+                      Location_Nodes_Int = sqrt(Coordinates(:,1).^2 + Coordinates(:,2).^2)'; %Distance of each interfering device from the center of the coverage area (on the ground)
+                      dPropogation=zeros(1,length(iscollision)); %Total distance from the interfering device to the satellite, including the height of the satellite (H = 780 km)
+                       E_dpro=zeros(1,length(iscollision)); % Intermediate step in calculating the angle using satellite geometry.
+                       %Calculate elevation angles
                         % Distance from interfering nodes to satellite
                         for track=1:length(Location_Nodes_Int)
                         dPropogation(1,track) = sqrt(H^2 + Location_Nodes_Int(track).^2); 
@@ -254,8 +259,12 @@ F_success = 0;% Successful fragment transmissions
                         E_dpro(Fin_ang) = (H*((H+2*R)) - dPropogation(Fin_ang).^2)./(2.*dPropogation(Fin_ang).*R);
                         end
 
-                        E_AngPro=asind(E_dpro);
-                
+                        E_AngPro=asind(E_dpro);%Converts the result to degrees using asind.
+
+                %Determine the K-factor
+                %Looks up the Rician K-factor for each interfering device based on its elevation angle (E_AngPro).
+%K_factor: Represents how much interference can be mitigated due to line-of-sight conditions.
+%interp1: Interpolates the K-factor for the specific elevation angle.
                         kC = interp1(E_angles,K_factor,E_AngPro);
                 
                         %% Rician fading for interfering signals
