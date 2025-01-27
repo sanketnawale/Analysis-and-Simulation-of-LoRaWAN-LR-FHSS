@@ -335,14 +335,19 @@ sigmaD: The randomness introduced by the bounced paths.
 % Rest are fragments of 50 ms
 
 Success_header = Header_N_DR8 - length(nonzeros(target_collided(1:Header_N_DR8)));       % No. of successfully received headers
+%Header_N_DR8: The total number of header fragments (e.g., 3 in this case).
+%target_collided(1:Header_N_DR8): Checks the collision status of the first three fragments (headers).
+%nonzeros(...): Finds how many of the header fragments had collisions.
+%Header_N_DR8 - ...: Subtracts the number of collided headers from the total headers to get the number of successfully received headers.
 Threshold = size(pack_tx_segments,2) - round(fragment_PHY_length *(1-Code_Rate))-Header_N_DR8 - length(Transceiver_wait);
+%Threshold: The minimum number of successfully received payload fragments required for decoding.
 Success_fragment = size(target_collided,2) - length(nonzeros(target_collided((Header_N_DR8+2):end)))-Header_N_DR8-1;
-
-                      if(Success_fragment>=Threshold)
+%Checks how many payload fragments (after the headers and transceiver wait) were successfully received.
+                      if(Success_fragment>=Threshold) %If the number of successfully received payload fragments is greater than or equal to the Threshold, the payload is marked as successfully decoded
                            F_success=F_success+1;
                       end
 
-        if (Success_header>=1)
+        if (Success_header>=1) %Success_header >= 1: Checks if at least 1 header fragment was received successfully.
             H_success=H_success+1;
             if(Success_fragment>=Threshold)
                 decoded = 1 + decoded;                
@@ -350,24 +355,26 @@ Success_fragment = size(target_collided,2) - length(nonzeros(target_collided((He
         end
         
 Success_header_capture =Header_N_DR8 - length(nonzeros(target_discarded(1:Header_N_DR8)));
-
+%Same logic as Success_header, but now checking the target_discarded array (for fragments discarded due to interference).
         if (Success_header_capture>=1)
         Success_fragment_capture = size(target_discarded,2) - length(nonzeros(target_discarded(Header_N_DR8+2:end)))-Header_N_DR8-1;
             if(Success_fragment_capture>=Threshold)
         decoded_Capture = 1 + decoded_Capture;
+        %If at least 1 header fragment and enough payload fragments were successfully received (despite interference), the message is marked as decoded under capture conditions.
             end
     
         end        
         
      end
-PS_DR8(c)=decoded;   %Simulated overall success probability
+%Save the Simulated Results
+PS_DR8(c)=decoded;   %Simulated overall success probability decoded: Total successful messages in the simulation (calculated earlier).
 %PH_DR8(c,m)=H_success; %Simulated success probability of headers
 %PF_DR8(c,m)=F_success; %Simulated success probability of data fragments
 
 PS_DR8_Capture(c)=decoded_Capture; %Simulated success probability with capture effect
-
+%Calculate Analytical Results
 [PS_DR8_analytical,PH,PF] = DR8_analytical (N,pkct_p_h,Header_duration,F_duration,Last_fragment_duration,fragment_length,Header_N_DR8,Threshold,OBW_channels);
-PA_S(c) = PS_DR8_analytical;  %Analytical overall success probability
+PA_S(c) = PS_DR8_analytical;  %Analytical overall success probabilityThe function DR8_analytical calculates success probabilities using math (not simulations).
 %PA_H(c) = PH;                %Analytical success probability for headers
 %PA_F(c) =PF;                  %Analytical success probability for data fragments
 end
@@ -384,4 +391,4 @@ ylabel('Success probability', 'Interpreter', 'Latex');
 xlabel('Distance from node to satellite (km)', 'Interpreter', 'Latex');
 axis([Distance(1)/1e3 Distance(end)/1e3 0 1])
 legend('DR8 analytical','DR8 Simulated', 'DR8 Capture effect')
-toc
+toc%Displays the total time taken to run the simulation and plotting.
