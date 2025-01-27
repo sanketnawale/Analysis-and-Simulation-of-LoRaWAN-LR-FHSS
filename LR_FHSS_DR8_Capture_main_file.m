@@ -268,42 +268,59 @@ F_success = 0;% Successful fragment transmissions
                         kC = interp1(E_angles,K_factor,E_AngPro);
                 
                         %% Rician fading for interfering signals
-               
+                         %Mean and Variance for the Signal
                         muC = sqrt(kC./(2.*(kC+1)));    % Mean 
-                        sigmaC = sqrt(1./(2.*(kC+1)));  % Variance 
-                        hrC=(sigmaC.*randn(1,length(iscollision))) + muC;
-                        hiC=1j.*(sigmaC.*randn(1,length(iscollision)) + muC);
-                
-                        h1C=(abs(hrC+hiC)).^2;
-                
+                        %kC: The Rician K-factor, which tells how strong the direct path is compared to the bounced paths.
+                        %A large kC means the direct path is much stronger.$$A small kC means the bounced paths are stronger or equal to the direct path.
+                        %The mean of the signal fading, representing the average strength of the direct path.
+                        sigmaC = sqrt(1./(2.*(kC+1)));  % VarianceThe variance, representing the randomness caused by the bounced paths. 
+                       %% Generate Random Components
+                        hrC=(sigmaC.*randn(1,length(iscollision))) + muC; %hrC: The real part of the signal fading (like the direct path and some randomness).
+                        hiC=1j.*(sigmaC.*randn(1,length(iscollision)) + muC);%hiC: The imaginary part of the signal fading (used to capture the bounces in a mathematical way).
+                        %randn: Generates random numbers that follow a normal (Gaussian) distribution.
+                        %Combine the Real and Imaginary Parts
+                        h1C=(abs(hrC+hiC)).^2;%hrC + hiC: Combines the real and imaginary parts to get the total signal.
+                        %abs(...): Calculates the magnitude of the combined signal (how strong it is after accounting for direct and bounced paths)
+                        
                         %% Interfering signal power
-
+                        %Purpose: Calculate the total power of all interfering signals that are reaching the satellite.
                         % Pr = pt*Gt*Gr*path loss * h  
     
                         %% total interferance = sum of all the interfering signals 
                         pr_h_g_I = sum(Pt.*h1C.*Gr.*Gt.*((wavelength./(4*pi.*dPropogation)).^eta));
-                
+                        %h1C: Rician fading for interfering signals (calculated earlier). It tells how much the signals are weakened due to bouncing around.
+                        %Gr and Gt: Gains of the receiving and transmitting antennas, like how much louder a megaphone makes your voice.
+                        
                         %% Rician fading for desired signals
                 
-                        kD = k(c);
-                
+                        kD = k(c);%kD: The Rician K-factor for the desired signal.
+                       % A large kD means the direct path is strong, and the signal is clear.
+%A small kD means the bounced paths are significant, and the signal might be unclear.
+%muD: The average strength of the direct path.
+
+sigmaD: The randomness introduced by the bounced paths.
                         muD = sqrt(kD./(2*(kD+1)));     % Mean 
                         sigmaD = sqrt(1./(2*(kD+1)));   % Variance 
                 
                         hrD=sigmaD*randn(1,1)+muD;
                         hiD=1j.*(sigmaD*randn(1,1)+muD);
-                        h1D=(abs(hrD+hiD)).^2;
+                        h1D=(abs(hrD+hiD)).^2; %Combine to Get the Total Signal Strength
     
-                        %% Received power of desired signal
+                        %% Received power of desired signalCalculate the Power of the Desired Signal
                
-                        pr_h_g_D = Pt.*h1D.*Gr.*Gt.*((wavelength./(4*pi.*Distance(c))).^eta);
+                        pr_h_g_D = Pt.*h1D.*Gr.*Gt.*((wavelength./(4*pi.*Distance(c))).^eta); 
+                        %Path Loss:wavelength %Distance(c): The distance from the device to the satellite.
                   
+                        %wavelength: The signal's wavelength.
+                        %eta: Controls how quickly the signal loses power over distance.
                        % https://lora-developers.semtech.com/library/tech-papers-and-guides/lora-and-lorawan/
                 
 
                             if  pr_h_g_D  < (pr_h_g_I*4)
+                            %pr_h_g_D: The received power of the desired signal.
+                            %pr_h_g_I: The total interference power from other devices
                             %discarded = discarded + 1; %% Destructive collision
-                            target_discarded(seg) = 1;
+                            target_discarded(seg) = 1; %Marks the current fragment (seg) as discarded.This means the satellite couldn’t decode the fragment because of destructive collision caused by interference.
                             end
 
                     end
