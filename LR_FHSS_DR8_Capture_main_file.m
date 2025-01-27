@@ -41,105 +41,132 @@ H = 780e3;                 %Orbital height
 
 %% Distance from user to satellite as function of elevation angle
 [Distance, Elevation_Angles, Ground_distance,FootPrint_R]=Satellite_Geometry(H,E);
-X = [1 8 11 14 17 19 22 25]; %To simulate fewer points
-Distance=Distance(X);
+%distance from user to satt as a function of elevation angle 
+%E: ele sangle 10:1:90
+%dist: dist in staraight bline from tghe user to the sat at each elevation angle
+%elevation : ele angle are analyzed
+%gnd distance1: how far hori ythe user signal trave; on eath surface
+%foothprintyR: the radius of the sat coverage foothprint on earth
+X = [1 8 11 14 17 19 22 25]; %To simulate fewer points : specific elevation angles reducingthe dataset
+Distance=Distance(X); 
+% filters the bdistance array to include  only the distance 
+% corresponding to these selected indices.
 
 E_angles = [10 20 30 40 50 60 70 80 90];
+%an anglgls taht how sat is high in sky
 K_factor = [1.24 3.07 3.24 3.6 3.89 5.63 9.77 17.06 25.11];
-k = sort(interp1(E_angles,K_factor,Elevation_Angles),'descend');
+%k: describe teh fadinga due to atmosphere and geometry path
+k = sort(interp1(E_angles,K_factor,Elevation_Angles),'descend'); % interpolation of fineer granulatitu
+%interp1: this interpolation esimate the k factor for every Eangle
+%ip : known E angle and kfactor
+%op interpolated kfactor for all anglks in elevation angles from sat geo calculation
+%sort:sort the interpolated kfactors in decending order
 
-%% Time on air
+%% Time on air function calculte the toa for tx packt in lorawan
 [ToA_DR8,ToA_DR8_WH] = ToA_Packets_DR8(Payload,Header_ToA_DR8,M); 
+%ipo payload in bytesa
+%header are precalculated , M is spreafding factor
 % ToA_DR8 -> including headers duration
 % ToA_DR8_WH -> without headers duration
-Transceiver_wait = 6.472/1000; %Tw      
+Transceiver_wait = 6.472/1000; %Tw      dealy by transreviver known asd tw
 ToA_DR8(1)=ToA_DR8(1) + Transceiver_wait;  % Total on-air time
 
-%% Number of fragments
+%% Number of fragments each fragmenr small data pkt has fixed duration 50nms
 fragment_duration = 50/1000; %50 ms
 
 fragment_50_ms = floor(ToA_DR8_WH(1)/fragment_duration);  %No. of payload data fragments
 % The last fragment may not be equal to 50ms. We need to calculate it.
+% determine how many full fragmnet 50ms fit intro teh total payload time  on air (TOA dr8WH
 Last_fragment_duration = ((ToA_DR8_WH(1)/fragment_duration) - fragment_50_ms)*fragment_duration;
+%calculte teh leftover duration for thr last fragment which dont fit in 50ms
 fragment_PHY_length  = fragment_50_ms + 1;
+%calcultr th total no of frangments + accounts for the last fraegmnets
 fragment_length = Header_N_DR8 + length(Transceiver_wait) + fragment_PHY_length;
-
+%total frangment length
 %pack_tx_segments = Header_N_DR8 + ceil((0.102*ceil((Payload+2)/4))/F_duration) +length(Transceiver_wait);
 
 %% Simulator
-transmission_sim=zeros(MonteCarlo,fragment_length);
+transmission_sim=zeros(MonteCarlo,fragment_length);%initilization
+%montecarlo: no of iteration : fragment length : total no of fragments we calulate eralier
 
-for c=1:1:length(Distance)
+%llop over distances
+for c=1:1:length(Distance) %C index for each distance in the distance arry
 N=Nodes;
 csvwrite('loop_count.txt',c)
-decoded = 0;
-decoded_Capture = 0;
-discarded = 0;
-H_success = 0;
-F_success = 0;
-    for m=1:1:MonteCarlo
-    
+decoded = 0;% Number of successfully decoded packets
+decoded_Capture = 0; % Successfully decoded packets with capture effect
+discarded = 0;% Packets discarded due to collisions
+H_success = 0; % Successful header transmissions
+F_success = 0;% Successful fragment transmissions
+    for m=1:1:MonteCarlo 
+    %inner loop for monte carlo
      clear TX_stamp
      clear Tsort
      clear TimeStamp
      clear pack_tx_segments
 
-     First_transmit = rand(1,1)/1000;          % First transmission
-            
+     First_transmit = rand(1,1)/1000;          % First transmission time in sec
+     %Mean Inter-arrival Time       
      mu = (1/(N*pkct_p_h)).*Simulation_T;      % inter arrival time
      Inter_arrivals = exprnd(mu,1,N*pkct_p_h); % inter arrival of the traffic in a hour
-     Times = [First_transmit Inter_arrivals];
+     %Generate random inter-arrival times using an exponential distribution
+     Times = [First_transmit Inter_arrivals];%Convert inter-arrival times into cumulative timestamps for when each packet is transmitted.
      
      %Next step: convert inter-arrivals into time stamp 
      TimeStamp = cumsum(Times);                % Time stamp of the traffic in the network
-     pack_tx_segments=zeros(length(TimeStamp),fragment_length);
-            
+     %cumsum(Times): Calculates the cumulative sum to create the timestamps
+     pack_tx_segments=zeros(length(TimeStamp),fragment_length);%Packet Transmission Segments
+     %Create a matrix to store the timestamp for each fragment of every packet.
+     %%Rows represent packets.
+     %Columns represent fragments (headers + payload fragments).
+     
      %% Time stamp of the hops (segments)
-            
-        for pack=1:1:length(TimeStamp)   
-            for frag = 1:1:fragment_length 
-                if frag == 1
-                pack_tx_segments(pack,frag) = TimeStamp (pack);
-                elseif frag > 1 && frag <=(Header_N_DR8+1)
+         %Iterating Over Packets   
+        for pack=1:1:length(TimeStamp)   %For each packet, calculate the timestamps for its fragments.
+            for frag = 1:1:fragment_length %Calculate the timestamp for each fragment of a packet based
+                if frag == 1%The first fragment's timestamp is simply the packet's start tim
+                pack_tx_segments(pack,frag) = TimeStamp (pack);%The first fragment's timestamp is simply the packet's start tim
+                elseif frag > 1 && frag <=(Header_N_DR8+1)%Add Header_duration (fixed at 0.233 seconds) to the previous fragment’s timestamp
                 pack_tx_segments(pack,frag) = pack_tx_segments(pack,frag-1) + Header_duration;
-                elseif frag == (Header_N_DR8+2)
+                elseif frag == (Header_N_DR8+2)%After the headers, there is a small wait time (6.472 ms) before payload fragments are transmitted.
                 pack_tx_segments(pack,frag) = pack_tx_segments(pack,frag-1) + Transceiver_wait;
-                else
+                else %The payload fragments are transmitted one by one, with a fixed duration of fragment_duration (50 ms) for each fragment
                 pack_tx_segments(pack,frag) = pack_tx_segments(pack,frag-1) + fragment_duration;
                 end
             end
         end
 
     %% Vulnerable time
-    Transmit = randi(length(TimeStamp));                % Selecting one random device and single transmission instant
-    % Ts: transmission started
+    Transmit = randi(length(TimeStamp));  % Randomly selects one of the devices that has transmitted.
+    % Ts: The time when this selected device starts transmitting.
     Ts= TimeStamp(Transmit);
     
     % vulnerable time
-    Tstart = Ts - ToA_DR8(1);
-    Tend = Ts + ToA_DR8(1);
+    Tstart = Ts - ToA_DR8(1);%Time when interference can start. This is the transmission start time minus the packet's Time on Air (ToA_DR8(1)).
+    Tend = Ts + ToA_DR8(1);% Time when interference can end. This is the transmission end time plus the Time on Air.
 
 %% Find the number active devices when the desired device was transmitting
 
     index_start = find(pack_tx_segments(:,1)>=Tstart & pack_tx_segments(:,1)<=Tend); % Select all the transmission in 2T interval, where T is on-air time
+%pack_tx_segments(:,1): The first column of pack_tx_segments contains the start times of all transmissions.
+    %find(...): Selects transmissions that started between Tstart and Tend
+    simultaneous = (unique([index_start'])); %simultaneous: A list of all devices transmitting during the "vulnerable time.
+    target_index = find(simultaneous == Transmit);%target_index: The index of the selected device in the simultaneous list.
 
-    simultaneous = (unique([index_start']));
-    target_index = find(simultaneous == Transmit);
-
-    simultaneous(target_index) = [];
+    simultaneous(target_index) = [];%Remove the selected device to avoid comparing it with itself.
  
 %% Frequency-time scheduling of target transmission: which fragment is using the specific channel for a specific time?
-% 
-    target_pattern=zeros(1,size(pack_tx_segments,2));
-    target_pattern(1) = randi(OBW_channels,1,1);            %First hop of the desired signal
+% Initialize the schedule
+    target_pattern=zeros(1,size(pack_tx_segments,2));%An array representing which frequency channel is used for each fragment.
+    target_pattern(1) = randi(OBW_channels,1,1);            %First hop of the desired signal.. Assign a random channel for the first fragment.
 
-        for assign=2:1:size(pack_tx_segments,2)
-            if(assign==Header_N_DR8+1)               
-                target_pattern(assign) = 0;                % Do not assign a channel during T_wait 
+        for assign=2:1:size(pack_tx_segments,2)%Assign a frequency channel for each subsequent fragment.
+            if(assign==Header_N_DR8+1)     %          
+                target_pattern(assign) = 0;                % Do not assign a channel during T_wait :::During the Transceiver Wait (after the headers), no frequency channel is assigned.
             else  
-                target_pattern(assign) = randi(OBW_channels,1,1);
+                target_pattern(assign) = randi(OBW_channels,1,1);%Assign random channels for other fragm
                 dif_track=abs(target_pattern(assign)-target_pattern(assign-1));
-                while dif_track < 8                       % 8 x 488 = 3.9 kHz spacing
+                while dif_track < 8                       % 8 x 488 = 3.9 kHz spacing ;;If the difference (dif_track) is less than 8, the channel spacing is too small, and interference could occur.
                     target_pattern(assign) = randi(OBW_channels,1,1);
                     dif_track=abs(target_pattern(assign)-target_pattern(assign-1));
                 end
